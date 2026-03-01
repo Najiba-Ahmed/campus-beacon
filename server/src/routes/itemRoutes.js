@@ -1,0 +1,10 @@
+const express = require('express');
+const router = express.Router();
+const verifyEmail = require('../middleware/verifyEmail');
+const controller = require('../controllers/itemController');
+
+router.post('/', verifyEmail, controller.createItem);
+router.get('/', verifyEmail, controller.listItems);
+router.put('/:id/status', verifyEmail, controller.updateStatus);
+
+module.exports = router;
