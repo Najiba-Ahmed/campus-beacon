@@ -1,13 +1,13 @@
 import React, { useEffect, useState } from 'react';
 import API from '../services/api';
 
-const categories = ['', 'Electronics','ID Cards','Keys','Clothing','Bags','Documents','Others'];
-const statuses = ['', 'Lost','Found','Claimed','Resolved'];
+const categories = ['', 'Electronics', 'ID Cards', 'Keys', 'Clothing', 'Bags', 'Documents', 'Others'];
+const statuses = ['', 'Lost', 'Found', 'Claimed', 'Resolved'];
 
-export default function Feed(){
+export default function Feed() {
   const [items, setItems] = useState([]);
-  const [filter, setFilter] = useState({ q:'', category:'', status:'', sort: 'newest' });
-  const currentUserEmail = API.defaults.headers.common['x-user-email']; // Get active user email
+  const [filter, setFilter] = useState({ q: '', category: '', status: '', sort: 'newest' });
+  const currentUserEmail = API.defaults.headers.common['x-user-email'];
 
   async function load() {
     try {
@@ -16,15 +16,17 @@ export default function Feed(){
       if (filter.category) params.category = filter.category;
       if (filter.status) params.status = filter.status;
       if (filter.sort) params.sort = filter.sort;
-      
+
       const res = await API.get('/items', { params });
-      setItems(res.data);
+
+      const visibleItems = res.data.filter(item => !item.isHidden);
+      setItems(visibleItems);
     } catch (err) {
-      console.error("Error loading items:", err);
+      console.error('Error loading items:', err);
     }
   }
 
-  useEffect(()=> {
+  useEffect(() => {
     load();
     const handler = () => load();
     window.addEventListener('refreshFeed', handler);
@@ -42,23 +44,21 @@ export default function Feed(){
 
   const handleClaimRequest = async (item) => {
     let payload = { itemId: item._id };
-    
-    // If it's a high-sensitivity item, prompt for the answer
+
     if (item.sensitivity === 'High' && item.bcvQuestion) {
       const answer = window.prompt(
         `This item requires verification.\nPlease answer the following question for the finder to review:\n\nQuestion: ${item.bcvQuestion}`
       );
-      
+
       if (!answer) {
-        alert("Claim cancelled. An answer is required to proceed.");
-        return; // Stop the process if the user cancels
+        alert('Claim cancelled. An answer is required to proceed.');
+        return;
       }
-      // Add the answer to our API request payload
+
       payload.answer = answer;
     }
-    
+
     try {
-      // Send the request. The payload will include the answer if it was provided.
       await API.post('/claims', payload);
       alert('Your claim has been sent to the finder for review!');
     } catch (err) {
@@ -66,37 +66,70 @@ export default function Feed(){
     }
   };
 
+  const handleReport = async (item) => {
+    const reason = window.prompt(
+      `Why are you reporting "${item.title}" as suspicious?\n\nExample: fake claim, misleading description, spam`
+    );
+
+    if (reason === null) return;
+
+    try {
+      await API.post(`/reports/${item._id}`, { reason });
+      alert('Report submitted successfully.');
+      load();
+    } catch (err) {
+      alert(err.response?.data?.message || 'Error reporting item.');
+    }
+  };
+
   return (
     <section className="notion-page">
       <h1 className="page-title">Item Feed</h1>
-      
-      {/* New, Improved Search and Filter Area */}
+
       <div className="search-and-filter-panel">
-        
-        {/* FR7: Prominent Google-style Search Bar */}
         <div className="google-search-container">
-          <input 
-            className="google-search-input" 
-            placeholder="🔍 Search for lost or found items..." 
-            value={filter.q} 
-            onChange={e => setFilter({...filter, q: e.target.value})} 
+          <input
+            className="google-search-input"
+            placeholder="🔍 Search for lost or found items..."
+            value={filter.q}
+            onChange={e => setFilter({ ...filter, q: e.target.value })}
           />
         </div>
 
-        {/* FR6: Filter and Sort Controls below the search bar */}
         <div className="filter-controls">
-          <select className="notion-input" value={filter.category} onChange={e=>setFilter({...filter,category:e.target.value})}>
-            {categories.map(c => <option key={c} value={c}>{c || 'All Categories'}</option>)}
+          <select
+            className="notion-input"
+            value={filter.category}
+            onChange={e => setFilter({ ...filter, category: e.target.value })}
+          >
+            {categories.map(c => (
+              <option key={c} value={c}>
+                {c || 'All Categories'}
+              </option>
+            ))}
           </select>
-          <select className="notion-input" value={filter.status} onChange={e=>setFilter({...filter,status:e.target.value})}>
-            {statuses.map(s => <option key={s} value={s}>{s || 'All Statuses'}</option>)}
+
+          <select
+            className="notion-input"
+            value={filter.status}
+            onChange={e => setFilter({ ...filter, status: e.target.value })}
+          >
+            {statuses.map(s => (
+              <option key={s} value={s}>
+                {s || 'All Statuses'}
+              </option>
+            ))}
           </select>
-          <select className="notion-input" value={filter.sort} onChange={e=>setFilter({...filter,sort:e.target.value})}>
+
+          <select
+            className="notion-input"
+            value={filter.sort}
+            onChange={e => setFilter({ ...filter, sort: e.target.value })}
+          >
             <option value="newest">Newest First</option>
             <option value="oldest">Oldest First</option>
           </select>
         </div>
-
       </div>
 
       <div className="notion-list">
@@ -107,38 +140,69 @@ export default function Feed(){
               <div className="tags">
                 <span className={`pill status-${item.status.toLowerCase()}`}>{item.status}</span>
                 <span className="pill category">{item.category}</span>
-                {item.sensitivity === 'High' && <span className="pill" style={{background: 'red', color: 'white'}}>🔒 Highly Sensitive</span>}
+                {item.sensitivity === 'High' && (
+                  <span className="pill" style={{ background: 'red', color: 'white' }}>
+                    🔒 Highly Sensitive
+                  </span>
+                )}
+                {item.flagCount > 0 && (
+                  <span className="pill" style={{ background: '#f59e0b', color: 'white' }}>
+                    🚩 {item.flagCount} Report{item.flagCount > 1 ? 's' : ''}
+                  </span>
+                )}
               </div>
             </div>
+
             <p className="card-desc">{item.description || 'No description provided.'}</p>
+
             <div className="card-meta">
               <span>📍 {item.zone || 'Unknown Location'}</span>
               <span>👤 {item.postedByEmail}</span>
             </div>
-            
+
             <div className="card-actions">
               {item.postedByEmail === currentUserEmail ? (
                 <>
                   {item.status !== 'Claimed' && item.status !== 'Resolved' && (
-                    <button className="btn-outline small" onClick={()=>updateStatus(item._id, item.status === 'Found' ? 'Claimed' : 'Found')}>
+                    <button
+                      className="btn-outline small"
+                      onClick={() => updateStatus(item._id, item.status === 'Found' ? 'Claimed' : 'Found')}
+                    >
                       Toggle Found/Claimed
                     </button>
                   )}
                   {item.status !== 'Resolved' && (
-                    <button className="btn-outline small" onClick={()=>updateStatus(item._id, 'Resolved')}>Mark Resolved</button>
+                    <button
+                      className="btn-outline small"
+                      onClick={() => updateStatus(item._id, 'Resolved')}
+                    >
+                      Mark Resolved
+                    </button>
                   )}
                 </>
               ) : (
-                item.status === 'Found' && (
-                  <button className="btn-primary small" onClick={() => handleClaimRequest(item)}>
-                    🖐️ Claim Item
+                <>
+                  {item.status === 'Found' && (
+                    <button className="btn-primary small" onClick={() => handleClaimRequest(item)}>
+                      🖐️ Claim Item
+                    </button>
+                  )}
+
+                  <button
+                    className="btn-outline small"
+                    onClick={() => handleReport(item)}
+                  >
+                    🚩 Report Suspicious
                   </button>
-                )
+                </>
               )}
             </div>
           </div>
         ))}
-        {items.length === 0 && <p className="empty-state">No items found matching your filters.</p>}
+
+        {items.length === 0 && (
+          <p className="empty-state">No items found matching your filters.</p>
+        )}
       </div>
     </section>
   );
